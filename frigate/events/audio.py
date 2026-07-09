@@ -41,6 +41,12 @@ from frigate.util.builtin import get_ffmpeg_arg_list, load_labels
 from frigate.util.ffmpeg import start_or_restart_ffmpeg, stop_ffmpeg
 from frigate.util.process import FrigateProcess
 
+from .audio_classifier import (
+    AudioDetectionPayload,
+    BirdSoundClassifier,
+    resample_audio,
+)
+
 try:
     from tflite_runtime.interpreter import Interpreter
 except ModuleNotFoundError:
@@ -50,7 +56,9 @@ except ModuleNotFoundError:
 logger = logging.getLogger(__name__)
 
 
-def get_ffmpeg_command(ffmpeg: CameraFfmpegConfig) -> list[str]:
+def get_ffmpeg_command(
+    ffmpeg: CameraFfmpegConfig, sample_rate: int = AUDIO_SAMPLE_RATE
+) -> list[str]:
     ffmpeg_input: CameraInput = [i for i in ffmpeg.inputs if "audio" in i.roles][0]
     input_args = get_ffmpeg_arg_list(ffmpeg.global_args) + (
         parse_preset_input(ffmpeg_input.input_args, 1)
@@ -69,7 +77,7 @@ def get_ffmpeg_command(ffmpeg: CameraFfmpegConfig) -> list[str]:
             "-f",
             f"{AUDIO_FORMAT}",
             "-ar",
-            f"{AUDIO_SAMPLE_RATE}",
+            f"{sample_rate}",
             "-ac",
             "1",
             "-y",
@@ -210,11 +218,23 @@ class AudioEventMaintainer(threading.Thread):
         # per-camera stop signal so a single maintainer can be torn down at
         # runtime (e.g. on camera removal) without stopping the whole process
         self.camera_stop_event = threading.Event()
+        self.audio_sample_rate = (
+            self.camera_config.audio.bird_classification.sample_rate
+            if self.camera_config.audio.bird_classification.enabled
+            else AUDIO_SAMPLE_RATE
+        )
         self.detector = AudioTfl(stop_event, self.camera_config.audio.num_threads)
-        self.shape = (int(round(AUDIO_DURATION * AUDIO_SAMPLE_RATE)),)
-        self.chunk_size = int(round(AUDIO_DURATION * AUDIO_SAMPLE_RATE * 2))
+        self.bird_sound_classifier = BirdSoundClassifier(
+            self.camera_config.audio.bird_classification,
+            self.audio_sample_rate,
+            stop_event,
+        )
+        self.shape = (int(round(AUDIO_DURATION * self.audio_sample_rate)),)
+        self.chunk_size = int(round(AUDIO_DURATION * self.audio_sample_rate * 2))
         self.logger = logging.getLogger(f"audio.{self.camera_config.name}")
-        self.ffmpeg_cmd = get_ffmpeg_command(self.camera_config.ffmpeg)
+        self.ffmpeg_cmd = get_ffmpeg_command(
+            self.camera_config.ffmpeg, self.audio_sample_rate
+        )
         self.logpipe = LogPipe(f"ffmpeg.{self.camera_config.name}.audio")
         self.audio_listener: subprocess.Popen[Any] | None = None
         self.audio_transcription_model_runner = audio_transcription_model_runner
@@ -272,17 +292,34 @@ class AudioEventMaintainer(threading.Thread):
         self.camera_metrics[self.camera_config.name].audio_rms.value = rms
         self.camera_metrics[self.camera_config.name].audio_dBFS.value = dBFS
 
-        audio_detections: list[tuple[str, float]] = []
+        audio_detections: list[AudioDetectionPayload] = []
+        bird_classification_indexes: list[int] = []
+
+        self.bird_sound_classifier.add_audio(audio)
 
         # only run audio detection when volume is above min_volume
         if rms >= self.camera_config.audio.min_volume:
             # create waveform relative to max range and look for detections
-            waveform = (audio / AUDIO_MAX_BIT_RANGE).astype(np.float32)
+            detection_audio = resample_audio(
+                audio, self.audio_sample_rate, AUDIO_SAMPLE_RATE
+            )
+            expected_samples = int(round(AUDIO_DURATION * AUDIO_SAMPLE_RATE))
+            if detection_audio.shape[0] > expected_samples:
+                detection_audio = detection_audio[:expected_samples]
+            elif detection_audio.shape[0] < expected_samples:
+                detection_audio = np.pad(
+                    detection_audio,
+                    (0, expected_samples - detection_audio.shape[0]),
+                )
+            waveform = (detection_audio / AUDIO_MAX_BIT_RANGE).astype(np.float32)
             model_detections = self.detector.detect(waveform)
 
             for label, score, _ in model_detections:
                 self.logger.debug(
-                    f"{self.camera_config.name} heard {label} with a score of {score}"
+                    "%s heard %s with a score of %s",
+                    self.camera_config.name,
+                    label,
+                    score,
                 )
 
                 if label not in self.camera_config.audio.listen:
@@ -291,7 +328,19 @@ class AudioEventMaintainer(threading.Thread):
                 if score > dict(
                     (self.camera_config.audio.filters or {}).get(label, {})
                 ).get("threshold", 0.8):
-                    audio_detections.append((label, score))
+                    audio_detections.append({"label": label, "score": score})
+                    if (
+                        self.bird_sound_classifier.enabled
+                        and label
+                        in self.camera_config.audio.bird_classification.trigger_labels
+                    ):
+                        bird_classification_indexes.append(len(audio_detections) - 1)
+
+            if bird_classification_indexes:
+                classifications = self.bird_sound_classifier.classify()
+                if classifications:
+                    for index in bird_classification_indexes:
+                        audio_detections[index]["classifications"] = classifications
 
             # send audio detection data
             self.detection_publisher.publish(
@@ -299,7 +348,7 @@ class AudioEventMaintainer(threading.Thread):
                     self.camera_config.name,
                     datetime.datetime.now().timestamp(),
                     dBFS,
-                    [label for label, _ in audio_detections],
+                    audio_detections,
                 )
             )
 

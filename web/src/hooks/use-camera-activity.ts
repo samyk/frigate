@@ -8,7 +8,7 @@ import {
 import { CameraConfig, FrigateConfig } from "@/types/frigateConfig";
 import { MotionData, ReviewSegment } from "@/types/review";
 import { useEffect, useMemo, useState } from "react";
-import { AudioDetection, ObjectType } from "@/types/ws";
+import { AudioDetectionMap, ObjectType } from "@/types/ws";
 import { useTimelineUtils } from "./use-timeline-utils";
 import useDeepMemo from "./use-deep-memo";
 import { isEqual } from "lodash";
@@ -26,7 +26,7 @@ type useCameraActivityReturn = {
   activeTracking: boolean;
   activeMotion: boolean;
   objects: ObjectType[];
-  audio_detections: AudioDetection[];
+  audio_detections: AudioDetectionMap;
   offline: boolean;
 };
 
@@ -46,8 +46,8 @@ export function useCameraActivity(
   }, [config]);
   const [objects, setObjects] = useState<ObjectType[] | undefined>([]);
   const [audioDetections, setAudioDetections] = useState<
-    AudioDetection[] | undefined
-  >([]);
+    AudioDetectionMap | undefined
+  >({});
 
   // init camera activity
 
@@ -198,7 +198,7 @@ export function useCameraActivity(
         : updatedCameraState?.motion === true
       : false,
     objects: isCameraEnabled ? (objects ?? []) : [],
-    audio_detections: isCameraEnabled ? (audioDetections ?? []) : [],
+    audio_detections: isCameraEnabled ? (audioDetections ?? {}) : {},
     offline,
   };
 }

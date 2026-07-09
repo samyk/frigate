@@ -1,11 +1,15 @@
 """Convenience classes for updating configurations dynamically."""
 
+from __future__ import annotations
+
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from frigate.comms.config_updater import ConfigPublisher, ConfigSubscriber
-from frigate.config import CameraConfig, FrigateConfig
+
+if TYPE_CHECKING:
+    from frigate.config import CameraConfig, FrigateConfig
 
 
 class CameraConfigUpdateEnum(str, Enum):

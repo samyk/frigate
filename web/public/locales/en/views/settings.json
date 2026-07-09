@@ -923,6 +923,8 @@
       "title": "Audio",
       "noAudioDetections": "No audio detections",
       "score": "score",
+      "species": "Species",
+      "speciesScore": "Species score",
       "currentRMS": "Current RMS",
       "currentdbFS": "Current dbFS"
     },

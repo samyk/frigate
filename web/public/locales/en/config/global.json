@@ -329,18 +329,6 @@
       "label": "Detector specific model path",
       "description": "File path to the detector model binary if required by the chosen detector."
     },
-    "axengine": {
-      "label": "AXEngine NPU",
-      "description": "AXERA AX650N/AX8850N NPU detector running compiled .axmodel files via the AXEngine runtime."
-    },
-    "cpu": {
-      "label": "CPU",
-      "description": "CPU TFLite detector that runs TensorFlow Lite models on the host CPU without hardware acceleration. Not recommended.",
-      "num_threads": {
-        "label": "Number of detection threads",
-        "description": "The number of threads used for CPU-based inference."
-      }
-    },
     "deepstack": {
       "label": "DeepStack",
       "description": "DeepStack/CodeProject.AI detector that sends images to a remote DeepStack HTTP API for inference. Not recommended.",
@@ -373,14 +361,6 @@
         "description": "Token for DeGirum Cloud access."
       }
     },
-    "edgetpu": {
-      "label": "EdgeTPU",
-      "description": "EdgeTPU detector that runs TensorFlow Lite models compiled for Coral EdgeTPU using the EdgeTPU delegate.",
-      "device": {
-        "label": "Device Type",
-        "description": "The device to use for EdgeTPU inference (e.g. 'usb', 'pci')."
-      }
-    },
     "hailo8l": {
       "label": "Hailo-8/Hailo-8L",
       "description": "Hailo-8/Hailo-8L detector using HEF models and the HailoRT SDK for inference on Hailo hardware.",
@@ -397,37 +377,9 @@
         "description": "The device to use for MemryX inference (e.g. 'PCIe')."
       }
     },
-    "onnx": {
-      "label": "ONNX",
-      "description": "ONNX detector for running ONNX models; will use available acceleration backends (CUDA/ROCm/OpenVINO) when available.",
-      "device": {
-        "label": "Device Type",
-        "description": "The device to use for ONNX inference (e.g. 'AUTO', 'CPU', 'GPU')."
-      }
-    },
-    "openvino": {
-      "label": "OpenVINO",
-      "description": "OpenVINO detector for AMD and Intel CPUs, Intel GPUs and Intel VPU hardware.",
-      "device": {
-        "label": "Device Type",
-        "description": "The device to use for OpenVINO inference (e.g. 'CPU', 'GPU', 'NPU')."
-      }
-    },
-    "rknn": {
-      "label": "RKNN",
-      "description": "RKNN detector for Rockchip NPUs; runs compiled RKNN models on Rockchip hardware.",
-      "num_cores": {
-        "label": "Number of NPU cores to use.",
-        "description": "The number of NPU cores to use (0 for auto)."
-      }
-    },
     "synaptics": {
       "label": "Synaptics",
       "description": "Synaptics NPU detector for models in .synap format using the Synap SDK on Synaptics hardware."
-    },
-    "teflon_tfl": {
-      "label": "Teflon",
-      "description": "Teflon delegate detector for TFLite using Mesa Teflon delegate library to accelerate inference on supported GPUs."
     },
     "tensorrt": {
       "label": "TensorRT",
@@ -564,6 +516,54 @@
     "num_threads": {
       "label": "Detection threads",
       "description": "Number of threads to use for audio detection processing."
+    },
+    "bird_classification": {
+      "label": "Bird sound classification",
+      "description": "Settings for classifying detected bird audio into species.",
+      "enabled": {
+        "label": "Enable bird sound classification",
+        "description": "Enable species classification for detected bird audio. Requires a compatible TFLite waveform classifier and label map."
+      },
+      "model_path": {
+        "label": "Model path",
+        "description": "Path to a TFLite bird sound classifier model. The default BirdNET model is downloaded to /config/model_cache/bird_audio when bird sound classification is enabled."
+      },
+      "labelmap_path": {
+        "label": "Label map path",
+        "description": "Path to the classifier label map. The default BirdNET label map is downloaded to /config/model_cache/bird_audio when bird sound classification is enabled."
+      },
+      "threshold": {
+        "label": "Species threshold",
+        "description": "Minimum score required to accept a bird species classification."
+      },
+      "trigger_labels": {
+        "label": "Trigger labels",
+        "description": "Audio labels that trigger species classification when detected."
+      },
+      "sample_rate": {
+        "label": "Classifier sample rate",
+        "description": "Audio sample rate expected by the bird sound classifier."
+      },
+      "window_seconds": {
+        "label": "Classification window",
+        "description": "Number of seconds of recent audio to use when the classifier has a dynamic input shape."
+      },
+      "min_interval": {
+        "label": "Minimum interval",
+        "description": "Minimum seconds between bird sound classification attempts per camera."
+      },
+      "top_k": {
+        "label": "Top species",
+        "description": "Maximum number of accepted species candidates to expose in audio detection metadata."
+      },
+      "num_threads": {
+        "label": "Classification threads",
+        "description": "Number of threads to use for bird sound classification."
+      },
+      "output_activation": {
+        "label": "Output activation",
+        "description": "Activation to apply to raw classifier output before thresholding. The default BirdNET model outputs raw logits, so sigmoid is applied by default. Set to none for models that already output probabilities."
+      }
     }
   },
   "birdseye": {

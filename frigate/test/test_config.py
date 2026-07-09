@@ -167,6 +167,94 @@ class TestConfig(unittest.TestCase):
 
         assert merged["track"] == ["person", "face"]
 
+    def test_audio_bird_classification_config_inherits_to_camera(self):
+        config = {
+            "mqtt": {"host": "mqtt"},
+            "audio": {
+                "enabled": True,
+                "listen": ["bird"],
+                "bird_classification": {
+                    "enabled": True,
+                    "model_path": "/config/models/birdnet.tflite",
+                    "labelmap_path": "/config/models/birdnet-labels.txt",
+                    "threshold": 0.65,
+                    "sample_rate": 48000,
+                    "trigger_labels": ["bird", "chirp"],
+                    "output_activation": "sigmoid",
+                },
+            },
+            "cameras": {
+                "back": {
+                    "ffmpeg": {
+                        "inputs": [
+                            {
+                                "path": "rtsp://10.0.0.1:554/video",
+                                "roles": ["detect", "audio"],
+                            }
+                        ]
+                    },
+                    "detect": {
+                        "height": 1080,
+                        "width": 1920,
+                        "fps": 5,
+                    },
+                }
+            },
+        }
+
+        frigate_config = FrigateConfig(**config)
+        bird_classification = frigate_config.cameras["back"].audio.bird_classification
+
+        assert bird_classification.enabled
+        assert bird_classification.model_path == "/config/models/birdnet.tflite"
+        assert bird_classification.labelmap_path == "/config/models/birdnet-labels.txt"
+        assert bird_classification.threshold == 0.65
+        assert bird_classification.sample_rate == 48000
+        assert bird_classification.trigger_labels == ["bird", "chirp"]
+        assert bird_classification.output_activation == "sigmoid"
+
+    def test_audio_bird_classification_uses_default_model_cache_by_default(self):
+        config = {
+            "mqtt": {"host": "mqtt"},
+            "audio": {
+                "enabled": True,
+                "listen": ["bird"],
+                "bird_classification": {
+                    "enabled": True,
+                },
+            },
+            "cameras": {
+                "back": {
+                    "ffmpeg": {
+                        "inputs": [
+                            {
+                                "path": "rtsp://10.0.0.1:554/video",
+                                "roles": ["detect", "audio"],
+                            }
+                        ]
+                    },
+                    "detect": {
+                        "height": 1080,
+                        "width": 1920,
+                        "fps": 5,
+                    },
+                }
+            },
+        }
+
+        frigate_config = FrigateConfig(**config)
+        bird_classification = frigate_config.cameras["back"].audio.bird_classification
+
+        assert bird_classification.enabled
+        assert (
+            bird_classification.model_path
+            == "/config/model_cache/bird_audio/bird_audio_model.tflite"
+        )
+        assert (
+            bird_classification.labelmap_path
+            == "/config/model_cache/bird_audio/bird_audio_labelmap.txt"
+        )
+
     def test_override_birdseye(self):
         config = {
             "mqtt": {"host": "mqtt"},

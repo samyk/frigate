@@ -1,5 +1,7 @@
 """Manage camera activity and updating listeners."""
 
+from __future__ import annotations
+
 import datetime
 import json
 import logging
@@ -7,25 +9,100 @@ import random
 import string
 from collections import Counter
 from collections.abc import Callable
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from frigate.comms.event_metadata_updater import (
     EventMetadataPublisher,
     EventMetadataTypeEnum,
 )
-from frigate.config import CameraConfig, FrigateConfig
-from frigate.config.camera.updater import (
-    CameraConfigUpdateEnum,
-    CameraConfigUpdateSubscriber,
-)
+from frigate.events.audio_classifier import AudioClassification
+
+if TYPE_CHECKING:
+    from frigate.config import CameraConfig, FrigateConfig
 
 logger = logging.getLogger(__name__)
+
+
+def _normalize_audio_detection(detection: Any) -> tuple[str, dict[str, Any]] | None:
+    """Return an audio label and metadata from legacy or structured detections."""
+    if isinstance(detection, dict):
+        label = detection.get("label")
+        score = detection.get("score")
+        if not isinstance(label, str) or score is None:
+            return None
+
+        try:
+            normalized_score = float(score)
+        except (TypeError, ValueError):
+            return None
+
+        normalized: dict[str, Any] = {"score": normalized_score}
+        classifications = detection.get("classifications")
+        if isinstance(classifications, list):
+            normalized_classifications: list[AudioClassification] = []
+            for classification in classifications:
+                if not isinstance(classification, dict):
+                    continue
+
+                classification_label = classification.get("label")
+                classification_score = classification.get("score")
+                if (
+                    not isinstance(classification_label, str)
+                    or classification_score is None
+                ):
+                    continue
+
+                try:
+                    normalized_classification_score = float(classification_score)
+                except (TypeError, ValueError):
+                    continue
+
+                normalized_classifications.append(
+                    {
+                        "label": classification_label,
+                        "score": normalized_classification_score,
+                    }
+                )
+
+            if normalized_classifications:
+                normalized["classifications"] = normalized_classifications
+
+        return label, normalized
+
+    try:
+        label, score = detection
+    except (TypeError, ValueError):
+        return None
+
+    if not isinstance(label, str):
+        return None
+
+    try:
+        normalized_score = float(score)
+    except (TypeError, ValueError):
+        return None
+
+    return label, {"score": normalized_score}
+
+
+def _best_audio_classification(
+    classifications: list[AudioClassification] | None,
+) -> AudioClassification | None:
+    if not classifications:
+        return None
+
+    return max(classifications, key=lambda item: item["score"])
 
 
 class CameraActivityManager:
     def __init__(
         self, config: FrigateConfig, publish: Callable[[str, Any], None]
     ) -> None:
+        from frigate.config.camera.updater import (
+            CameraConfigUpdateEnum,
+            CameraConfigUpdateSubscriber,
+        )
+
         self.config = config
         self.publish = publish
         self.last_camera_activity: dict[str, dict[str, Any]] = {}
@@ -242,7 +319,7 @@ class AudioActivityManager:
 
             new_detections = new_activity[camera].get("detections", [])
             if self.compare_audio_activity(camera, new_detections, now):
-                logger.debug(f"Audio detections for {camera}: {new_activity}")
+                logger.debug("Audio detections for %s: %s", camera, new_activity)
                 self.publish(
                     f"{camera}/audio/all",
                     "ON" if len(self.current_audio_detections[camera]) > 0 else "OFF",
@@ -253,7 +330,7 @@ class AudioActivityManager:
                 )
 
     def compare_audio_activity(
-        self, camera: str, new_detections: list[tuple[str, float]], now: float
+        self, camera: str, new_detections: list[Any], now: float
     ) -> bool:
         camera_config = self.config.cameras.get(camera)
         if camera_config is None:
@@ -264,11 +341,42 @@ class AudioActivityManager:
 
         any_changed = False
 
-        for label, score in new_detections:
+        for raw_detection in new_detections:
+            normalized_detection = _normalize_audio_detection(raw_detection)
+            if normalized_detection is None:
+                continue
+
+            label, detection = normalized_detection
+            score = detection["score"]
+            classifications = detection.get("classifications")
+            best_classification = _best_audio_classification(classifications)
             any_changed = True
             if label in current:
                 current[label]["last_detection"] = now
                 current[label]["score"] = score
+                if classifications:
+                    previous_classification = _best_audio_classification(
+                        current[label].get("classifications")
+                    )
+                    if (
+                        previous_classification is None
+                        or best_classification is not None
+                        and best_classification["score"]
+                        > previous_classification["score"]
+                    ):
+                        current[label]["classifications"] = classifications
+                        self.event_metadata_publisher.publish(
+                            (
+                                current[label]["id"],
+                                best_classification["label"][:100]
+                                if best_classification
+                                else None,
+                                best_classification["score"]
+                                if best_classification
+                                else None,
+                            ),
+                            EventMetadataTypeEnum.sub_label.value,
+                        )
             else:
                 rand_id = "".join(
                     random.choices(string.ascii_lowercase + string.digits, k=6)
@@ -284,7 +392,9 @@ class AudioActivityManager:
                         event_id,
                         True,
                         score,
-                        None,
+                        best_classification["label"][:100]
+                        if best_classification
+                        else None,
                         None,
                         "audio",
                         {},
@@ -297,6 +407,8 @@ class AudioActivityManager:
                     "score": score,
                     "last_detection": now,
                 }
+                if classifications:
+                    current[label]["classifications"] = classifications
 
         # expire detections
         for label in list(current.keys()):

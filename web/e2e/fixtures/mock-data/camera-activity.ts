@@ -32,10 +32,18 @@ export interface CameraActivityState {
     current_zones: string[];
     id: string;
   }>;
-  audio_detections: Array<{
-    label: string;
-    score: number;
-  }>;
+  audio_detections: Record<
+    string,
+    {
+      id: string;
+      score: number;
+      last_detection?: number;
+      classifications?: Array<{
+        label: string;
+        score: number;
+      }>;
+    }
+  >;
 }
 
 function defaultCameraActivity(): CameraActivityState {
@@ -57,7 +65,7 @@ function defaultCameraActivity(): CameraActivityState {
     },
     motion: false,
     objects: [],
-    audio_detections: [],
+    audio_detections: {},
   };
 }
 

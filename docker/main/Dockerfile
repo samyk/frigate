@@ -8,6 +8,9 @@ ARG PIP_BREAK_SYSTEM_PACKAGES=1
 
 ARG BASE_IMAGE=debian:12
 ARG SLIM_BASE=debian:12-slim
+ARG BUILDPLATFORM=linux/amd64
+ARG TARGETPLATFORM=linux/amd64
+ARG TARGETARCH=amd64
 
 # A hook that allows us to inject commands right after the base images
 ARG BASE_HOOK=
@@ -39,36 +42,34 @@ ARG DEBIAN_FRONTEND
 ENV CCACHE_DIR /root/.ccache
 ENV CCACHE_MAXSIZE 2G
 
-RUN --mount=type=bind,source=docker/main/build_nginx.sh,target=/deps/build_nginx.sh \
-    /deps/build_nginx.sh
+COPY docker/main/build_nginx.sh /deps/build_nginx.sh
+RUN /deps/build_nginx.sh
 
 FROM wget AS sqlite-vec
 ARG DEBIAN_FRONTEND
 
 # Build sqlite_vec from source
 COPY docker/main/build_sqlite_vec.sh /deps/build_sqlite_vec.sh
-RUN --mount=type=tmpfs,target=/tmp --mount=type=tmpfs,target=/var/cache/apt \
-    --mount=type=bind,source=docker/main/build_sqlite_vec.sh,target=/deps/build_sqlite_vec.sh \
-    --mount=type=cache,target=/root/.ccache \
-    /deps/build_sqlite_vec.sh
+RUN /deps/build_sqlite_vec.sh
 
 # Build intel-media-driver from source against bookworm's system libva so it
 # works with Debian 12's glibc/libstdc++ (pre-built noble/trixie packages
 # require glibc 2.38 which is not available on bookworm).
 FROM base AS intel-media-driver
 ARG DEBIAN_FRONTEND
-RUN --mount=type=bind,source=docker/main/build_intel_media_driver.sh,target=/deps/build_intel_media_driver.sh \
-    /deps/build_intel_media_driver.sh
+COPY docker/main/build_intel_media_driver.sh /deps/build_intel_media_driver.sh
+RUN /deps/build_intel_media_driver.sh
 
-FROM scratch AS go2rtc
+FROM wget AS go2rtc
 ARG TARGETARCH
 WORKDIR /rootfs/usr/local/go2rtc/bin
-ADD --link --chmod=755 "https://github.com/AlexxIT/go2rtc/releases/download/v1.9.14/go2rtc_linux_${TARGETARCH}" go2rtc
+RUN wget -q "https://github.com/AlexxIT/go2rtc/releases/download/v1.9.14/go2rtc_linux_${TARGETARCH}" -O go2rtc \
+    && chmod 755 go2rtc
 
 FROM wget AS tempio
 ARG TARGETARCH
-RUN --mount=type=bind,source=docker/main/install_tempio.sh,target=/deps/install_tempio.sh \
-    /deps/install_tempio.sh
+COPY docker/main/install_tempio.sh /deps/install_tempio.sh
+RUN /deps/install_tempio.sh
 
 ####
 #
@@ -80,6 +81,8 @@ RUN --mount=type=bind,source=docker/main/install_tempio.sh,target=/deps/install_
 # Download and Convert OpenVino model
 FROM base_host AS ov-converter
 ARG DEBIAN_FRONTEND
+ARG PIP_BREAK_SYSTEM_PACKAGES
+ENV PIP_BREAK_SYSTEM_PACKAGES=${PIP_BREAK_SYSTEM_PACKAGES}
 
 # Install OpenVino Runtime and Dev library
 COPY docker/main/requirements-ov.txt /requirements-ov.txt
@@ -91,8 +94,8 @@ RUN apt-get -qq update \
     && pip3 install -r /requirements-ov.txt
 
 # Get OpenVino Model
-RUN --mount=type=bind,source=docker/main/build_ov_model.py,target=/build_ov_model.py \
-    mkdir /models && cd /models \
+COPY docker/main/build_ov_model.py /build_ov_model.py
+RUN mkdir /models && cd /models \
     && wget http://download.tensorflow.org/models/object_detection/ssdlite_mobilenet_v2_coco_2018_05_09.tar.gz \
     && tar -xvf ssdlite_mobilenet_v2_coco_2018_05_09.tar.gz \
     && python3 /build_ov_model.py
@@ -113,7 +116,7 @@ ENV CCACHE_MAXSIZE 2G
 # Build libUSB without udev.  Needed for Openvino NCS2 support
 WORKDIR /opt
 RUN apt-get update && apt-get install -y unzip build-essential automake libtool ccache pkg-config
-RUN --mount=type=cache,target=/root/.ccache wget -q https://github.com/libusb/libusb/archive/v1.0.26.zip -O v1.0.26.zip && \
+RUN wget -q https://github.com/libusb/libusb/archive/v1.0.26.zip -O v1.0.26.zip && \
     unzip v1.0.26.zip && cd libusb-1.0.26 && \
     ./bootstrap.sh && \
     ./configure CC='ccache gcc' CCX='ccache g++' --disable-udev --enable-shared && \
@@ -149,14 +152,16 @@ COPY audio-labelmap.txt .
 
 FROM wget AS s6-overlay
 ARG TARGETARCH
-RUN --mount=type=bind,source=docker/main/install_s6_overlay.sh,target=/deps/install_s6_overlay.sh \
-    /deps/install_s6_overlay.sh
+COPY docker/main/install_s6_overlay.sh /deps/install_s6_overlay.sh
+RUN /deps/install_s6_overlay.sh
 
 
 FROM base AS wheels
 ARG DEBIAN_FRONTEND
 ARG TARGETARCH
 ARG DEBUG=false
+ARG PIP_BREAK_SYSTEM_PACKAGES
+ENV PIP_BREAK_SYSTEM_PACKAGES=${PIP_BREAK_SYSTEM_PACKAGES}
 
 # Use a separate container to build wheels to prevent build dependencies in final image
 RUN apt-get -qq update \
@@ -201,8 +206,8 @@ RUN pip3 wheel --wheel-dir=/wheels -r /requirements-wheels.txt && \
     fi
 
 # Install HailoRT & Wheels
-RUN --mount=type=bind,source=docker/main/install_hailort.sh,target=/deps/install_hailort.sh \
-    /deps/install_hailort.sh
+COPY docker/main/install_hailort.sh /deps/install_hailort.sh
+RUN /deps/install_hailort.sh
 
 # Collect deps in a single layer
 FROM scratch AS deps-rootfs
@@ -262,8 +267,8 @@ ENV GLOG_logtostderr=0
 ENV PATH="/usr/local/go2rtc/bin:/usr/local/tempio/bin:/usr/local/nginx/sbin:${PATH}"
 
 # Install dependencies
-RUN --mount=type=bind,source=docker/main/install_deps.sh,target=/deps/install_deps.sh \
-    /deps/install_deps.sh
+COPY docker/main/install_deps.sh /deps/install_deps.sh
+RUN /deps/install_deps.sh
 
 ENV DEFAULT_FFMPEG_VERSION="8.0"
 ENV INCLUDED_FFMPEG_VERSIONS="${DEFAULT_FFMPEG_VERSION}:7.0:5.0"
@@ -272,8 +277,8 @@ RUN wget -q https://bootstrap.pypa.io/get-pip.py -O get-pip.py \
     && sed -i 's/args.append("setuptools")/args.append("setuptools==77.0.3")/' get-pip.py \
     && python3 get-pip.py "pip"
 
-RUN --mount=type=bind,from=wheels,source=/wheels,target=/deps/wheels \
-    pip3 install -U /deps/wheels/*.whl
+COPY --from=wheels /wheels /deps/wheels
+RUN pip3 install -U /deps/wheels/*.whl
 
 # Install Axera Engine
 RUN pip3 install https://github.com/AXERA-TECH/pyaxengine/releases/download/0.1.3-frigate/axengine-0.1.3-py3-none-any.whl
@@ -282,8 +287,8 @@ ENV PATH="${PATH}:/usr/bin/axcl"
 ENV LD_LIBRARY_PATH="${LD_LIBRARY_PATH}:/usr/lib/axcl"
 
 # Install MemryX runtime (requires libgomp (OpenMP) in the final docker image)
-RUN --mount=type=bind,source=docker/main/install_memryx.sh,target=/deps/install_memryx.sh \
-    bash -c "bash /deps/install_memryx.sh"
+COPY docker/main/install_memryx.sh /deps/install_memryx.sh
+RUN bash -c "bash /deps/install_memryx.sh"
 
 COPY --from=deps-rootfs / /
 
@@ -301,7 +306,7 @@ ENV S6_CMD_WAIT_FOR_SERVICES_MAXTIME=0
 ENTRYPOINT ["/init"]
 CMD []
 
-HEALTHCHECK --start-period=300s --start-interval=5s --interval=15s --timeout=5s --retries=3 \
+HEALTHCHECK --start-period=300s --interval=15s --timeout=5s --retries=3 \
     CMD test -f /dev/shm/.frigate-is-stopping && exit 0; curl --fail --silent --show-error http://127.0.0.1:5000/api/version || exit 1
 
 # Frigate deps with Node.js and NPM for devcontainer
@@ -342,6 +347,7 @@ CMD ["sleep", "infinity"]
 FROM --platform=$BUILDPLATFORM node:20 AS web-build
 
 WORKDIR /work
+ENV NODE_OPTIONS=--max-old-space-size=4096
 COPY web/package.json web/package-lock.json ./
 RUN npm install
 

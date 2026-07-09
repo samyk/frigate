@@ -53,8 +53,16 @@ export type ObjectType = {
 
 export type AudioDetection = {
   id: string;
-  label: string;
   score: number;
+  last_detection?: number;
+  classifications?: {
+    label: string;
+    score: number;
+  }[];
+};
+
+export type AudioDetectionMap = {
+  [label: string]: AudioDetection;
 };
 
 export interface FrigateCameraState {
@@ -75,10 +83,10 @@ export interface FrigateCameraState {
   };
   motion: boolean;
   objects: ObjectType[];
-  audio_detections: AudioDetection[];
+  audio_detections: AudioDetectionMap;
 }
 export interface FrigateAudioDetections {
-  [camera: string]: AudioDetection[];
+  [camera: string]: AudioDetectionMap;
 }
 
 export type ModelState =

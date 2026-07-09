@@ -37,6 +37,25 @@ from frigate.util.image import SharedMemoryFrameManager, calculate_16_9_crop
 logger = logging.getLogger(__name__)
 
 
+def get_audio_detection_info(detection: Any) -> tuple[str, str | None]:
+    """Return the audio label and best species sub label from a detection.
+
+    Audio detections are dicts with a label, score, and optional species
+    classifications. Plain label strings are accepted for compatibility.
+    """
+    if isinstance(detection, str):
+        return detection, None
+
+    label = detection.get("label", "")
+    classifications = detection.get("classifications")
+
+    if classifications:
+        best = max(classifications, key=lambda c: c["score"])
+        return label, best["label"]
+
+    return label, None
+
+
 THUMB_HEIGHT = 180
 THUMB_WIDTH = 320
 
@@ -701,19 +720,26 @@ class ReviewSegmentMaintainer(threading.Thread):
                     camera_config = self.config.cameras[camera]
 
                     for audio in audio_detections:
+                        label, species = get_audio_detection_info(audio)
+
                         if (
-                            audio in camera_config.review.alerts.labels
+                            label in camera_config.review.alerts.labels
                             and camera_config.review.alerts.enabled
                         ):
-                            current_segment.audio.add(audio)
+                            current_segment.audio.add(label)
                             current_segment.severity = SeverityEnum.alert
                             current_segment.last_alert_time = frame_time
                         elif (
                             camera_config.review.detections.labels is None
-                            or audio in camera_config.review.detections.labels
+                            or label in camera_config.review.detections.labels
                         ) and camera_config.review.detections.enabled:
-                            current_segment.audio.add(audio)
+                            current_segment.audio.add(label)
                             current_segment.last_detection_time = frame_time
+                        else:
+                            continue
+
+                        if species:
+                            current_segment.sub_labels[f"audio.{label}"] = species
                 elif topic == DetectionTypeEnum.api or topic == DetectionTypeEnum.lpr:
                     if manual_info["state"] == ManualEventState.complete:
                         current_segment.detections[manual_info["event_id"]] = (
@@ -811,22 +837,30 @@ class ReviewSegmentMaintainer(threading.Thread):
 
                     camera_config = self.config.cameras[camera]
                     detections = set()
+                    sub_labels: dict[str, str] = {}
 
                     for audio in audio_detections:
+                        label, species = get_audio_detection_info(audio)
+
                         if (
-                            audio in camera_config.review.alerts.labels
+                            label in camera_config.review.alerts.labels
                             and camera_config.review.alerts.enabled
                         ):
-                            detections.add(audio)
+                            detections.add(label)
                             severity = SeverityEnum.alert
                         elif (
                             camera_config.review.detections.labels is None
-                            or audio in camera_config.review.detections.labels
+                            or label in camera_config.review.detections.labels
                         ) and camera_config.review.detections.enabled:
-                            detections.add(audio)
+                            detections.add(label)
 
                             if not severity:
                                 severity = SeverityEnum.detection
+                        else:
+                            continue
+
+                        if species:
+                            sub_labels[f"audio.{label}"] = species
 
                     if severity:
                         self.active_review_segments[camera] = PendingReviewSegment(
@@ -834,7 +868,7 @@ class ReviewSegmentMaintainer(threading.Thread):
                             frame_time,
                             severity,
                             {},
-                            {},
+                            sub_labels,
                             [],
                             detections,
                         )

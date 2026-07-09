@@ -178,6 +178,57 @@ Frequently-heard labels like `speech` can generate a lot of events, and each eve
 
 :::
 
+### Bird Sound Species Classification
+
+Frigate can optionally run a second classifier when a configured bird audio label is heard. This keeps the built-in audio detector responsible for deciding that a bird-like sound occurred, then uses a BirdNET TFLite waveform classifier to identify the likely species.
+
+When bird sound classification is enabled with the default paths, Frigate downloads BirdNET Analyzer V2.4 into `/config/model_cache/bird_audio` on first startup. The image size is unchanged for users who do not enable this feature, and the cached model works offline after the first successful download. BirdNET Analyzer source code is MIT licensed while its published pretrained models are licensed under CC BY-NC-SA 4.0. Review that license before using the default model in a deployment. Custom compatible TFLite waveform classifiers can be used by overriding `model_path` and `labelmap_path`.
+
+<ConfigTabs>
+<TabItem value="ui">
+
+Navigate to <NavPath path="Settings > Global configuration > Audio detection" />.
+
+- Add `bird` to **Listen types**
+- Enable **Bird sound classification**
+- Set **Species threshold** for your environment
+
+</TabItem>
+<TabItem value="yaml">
+
+```yaml
+audio:
+  enabled: True
+  listen:
+    - bird
+  bird_classification:
+    enabled: True
+    threshold: 0.6
+```
+
+</TabItem>
+</ConfigTabs>
+
+When a species is accepted, active audio detections in the Debug view show the top species and score. The species is also written to the bird audio event as its sub label, which is shown in Explore and on review items in the Alerts and Detections lists. Species labels use the BirdNET common name (for example, `Northern Mockingbird`).
+
+Fine-tune bird sound classification with these optional parameters:
+
+- `trigger_labels`: Audio labels that trigger species classification. Default: `["bird"]`.
+- `model_path`: TFLite classifier path. Default: `/config/model_cache/bird_audio/bird_audio_model.tflite`.
+- `labelmap_path`: Classifier label map path. Default: `/config/model_cache/bird_audio/bird_audio_labelmap.txt`.
+- `sample_rate`: Sample rate expected by the classifier. Default: `48000`.
+- `window_seconds`: Seconds of recent audio used for dynamic input models. Default: `3.0`.
+- `min_interval`: Minimum seconds between classification attempts per camera. Default: `10.0`.
+- `top_k`: Number of accepted species candidates to expose. Default: `3`.
+- `num_threads`: Threads used by the TFLite classifier. Default: `2`.
+- `output_activation`: Activation applied to model output before thresholding, one of `none`, `sigmoid`, or `softmax`. The default BirdNET model outputs raw logits, so sigmoid is applied by default. Set `none` for models that already output probabilities. Default: `sigmoid`.
+
+:::tip
+
+Species classifiers are more sensitive to microphone quality and sample rate than coarse audio detection. Start with a higher `threshold`, verify results in the Debug view, then lower it only if the classifier is missing obvious calls.
+
+:::
+
 ### Audio Transcription
 
 Frigate supports fully local audio transcription using either `sherpa-onnx` or OpenAI's open-source Whisper models via `faster-whisper`. The goal of this feature is to support Semantic Search for `speech` audio events. Frigate is not intended to act as a continuous, fully-automatic speech transcription service. Automatically transcribing all speech (or queuing many audio events for transcription) requires substantial CPU (or GPU) resources and is impractical on most systems. For this reason, transcriptions for events are initiated manually from the UI or the API rather than being run continuously in the background.

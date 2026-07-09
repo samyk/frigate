@@ -16,7 +16,7 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
-import { AudioDetection, ObjectType } from "@/types/ws";
+import { AudioDetectionMap, ObjectType } from "@/types/ws";
 import useDeepMemo from "@/hooks/use-deep-memo";
 import { Card } from "@/components/ui/card";
 import { getIconForLabel } from "@/utils/iconUtil";
@@ -478,7 +478,7 @@ function ObjectList({ cameraConfig, objects }: ObjectListProps) {
 
 type AudioListProps = {
   cameraConfig: CameraConfig;
-  audioDetections?: AudioDetection[];
+  audioDetections?: AudioDetectionMap;
 };
 
 function AudioList({ cameraConfig, audioDetections }: AudioListProps) {
@@ -502,7 +502,16 @@ function AudioList({ cameraConfig, audioDetections }: AudioListProps) {
                 <div className="rounded-lg bg-selected p-2">
                   {getIconForLabel(key, "audio", "size-5 text-white")}
                 </div>
-                <div className="ml-3 text-lg">{getTranslatedLabel(key)}</div>
+                <div className="ml-3">
+                  <div className="text-lg">
+                    {getTranslatedLabel(key, "audio")}
+                  </div>
+                  {obj.classifications?.[0] && (
+                    <div className="text-xs text-muted-foreground">
+                      {t("debug.audio.species")}: {obj.classifications[0].label}
+                    </div>
+                  )}
+                </div>
               </div>
               <div className="flex w-8/12 flex-row items-center justify-end">
                 <div className="mr-2 w-1/3">
@@ -513,6 +522,16 @@ function AudioList({ cameraConfig, audioDetections }: AudioListProps) {
                     {obj.score ? (obj.score * 100).toFixed(1).toString() : "-"}%
                   </div>
                 </div>
+                {obj.classifications?.[0] && (
+                  <div className="mr-2 w-1/3">
+                    <div className="flex flex-col items-end justify-end">
+                      <p className="mb-1.5 text-sm text-primary-variant">
+                        {t("debug.audio.speciesScore")}
+                      </p>
+                      {(obj.classifications[0].score * 100).toFixed(1)}%
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           </Card>

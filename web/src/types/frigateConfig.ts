@@ -29,6 +29,24 @@ export interface FaceRecognitionConfig {
 
 export type SearchModel = "jinav1" | "jinav2";
 export type SearchModelSize = "small" | "large";
+export type AudioClassificationOutputActivation =
+  | "none"
+  | "sigmoid"
+  | "softmax";
+
+export interface AudioBirdClassificationConfig {
+  enabled: boolean;
+  model_path?: string | null;
+  labelmap_path?: string | null;
+  threshold: number;
+  trigger_labels: string[];
+  sample_rate: number;
+  window_seconds: number;
+  min_interval: number;
+  top_k: number;
+  num_threads: number;
+  output_activation: AudioClassificationOutputActivation;
+}
 
 export interface CameraConfig {
   friendly_name: string;
@@ -40,6 +58,7 @@ export interface CameraConfig {
     max_not_heard: number;
     min_volume: number;
     num_threads: number;
+    bird_classification: AudioBirdClassificationConfig;
   };
   audio_transcription: {
     enabled: boolean;
@@ -405,6 +424,7 @@ export interface FrigateConfig {
     max_not_heard: number;
     min_volume: number;
     num_threads: number;
+    bird_classification: AudioBirdClassificationConfig;
   };
 
   audio_transcription: {

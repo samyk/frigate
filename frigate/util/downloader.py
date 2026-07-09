@@ -49,26 +49,35 @@ class ModelDownloader:
         self.download_thread.start()
 
     def _download_models(self):
-        for file_name in self.file_names:
-            path = os.path.join(self.download_path, file_name)
-            lock_path = f"{path}.lock"
-            lock = FileLock(lock_path, cleanup_stale_on_init=True)
+        try:
+            for file_name in self.file_names:
+                path = os.path.join(self.download_path, file_name)
+                lock_path = f"{path}.lock"
+                lock = FileLock(lock_path, cleanup_stale_on_init=True)
 
-            if not os.path.exists(path):
-                with lock:
-                    if not os.path.exists(path):
-                        self.download_func(path)
+                if not os.path.exists(path):
+                    with lock:
+                        if not os.path.exists(path):
+                            self.download_func(path)
 
-            self.requestor.send_data(
-                UPDATE_MODEL_STATE,
-                {
-                    "model": f"{self.model_name}-{file_name}",
-                    "state": ModelStatusTypesEnum.downloaded,
-                },
+                self.requestor.send_data(
+                    UPDATE_MODEL_STATE,
+                    {
+                        "model": f"{self.model_name}-{file_name}",
+                        "state": ModelStatusTypesEnum.downloaded,
+                    },
+                )
+
+            if self.complete_func:
+                self.complete_func()
+        except Exception:
+            logger.exception("Failed to download model %s", self.model_name)
+            self.mark_files_state(
+                self.requestor,
+                self.model_name,
+                self.file_names,
+                ModelStatusTypesEnum.error,
             )
-
-        if self.complete_func:
-            self.complete_func()
 
         self.requestor.stop()
         self.download_complete.set()
